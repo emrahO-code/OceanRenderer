@@ -183,18 +183,20 @@ void Application::runBenchmark()
             if (frame >= warmupFrames) {
                 cpuMilliseconds +=
                     std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
-                gpuFftMilliseconds += renderer.gpuFftMilliseconds();
-                gpuRenderMilliseconds += renderer.gpuRenderMilliseconds();
+                const auto stats = renderer.stats();
+                gpuFftMilliseconds += stats.oceanComputeMilliseconds;
+                gpuRenderMilliseconds += stats.sceneMilliseconds;
             }
         }
 
         renderer.waitIdle();
+        const auto stats = renderer.stats();
         const double averageCpu = cpuMilliseconds / measuredFrames;
         const double averageFft = gpuFftMilliseconds / measuredFrames;
         const double averageRender = gpuRenderMilliseconds / measuredFrames;
         const double averageFps = 1000.0 / std::max(averageCpu, 0.001);
 
-        std::cout << "| " << renderer.deviceName()
+        std::cout << "| " << stats.deviceName
                   << " | " << buildType
                   << " | " << windowWidth << "x" << windowHeight
                   << " | " << resolution << "x" << resolution

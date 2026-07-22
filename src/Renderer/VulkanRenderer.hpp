@@ -13,6 +13,12 @@ class TessendorfOcean;
 struct OceanSettings;
 struct RenderSettings;
 
+struct RendererStats {
+    std::string deviceName;
+    double oceanComputeMilliseconds{};
+    double sceneMilliseconds{};
+};
+
 class VulkanRenderer {
 public:
     explicit VulkanRenderer(GLFWwindow* window);
@@ -35,9 +41,7 @@ public:
         float simulationTime);
     void waitIdle();
 
-    [[nodiscard]] const std::string& deviceName() const;
-    [[nodiscard]] double gpuFftMilliseconds() const;
-    [[nodiscard]] double gpuRenderMilliseconds() const;
+    [[nodiscard]] RendererStats stats() const;
     [[nodiscard]] bool isInterfaceCapturingMouse() const;
 
 private:
