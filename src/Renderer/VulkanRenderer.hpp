@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 struct GLFWwindow;
 
@@ -34,6 +35,9 @@ public:
         float simulationTime);
     void waitIdle();
 
+    [[nodiscard]] const std::string& deviceName() const;
+    [[nodiscard]] double gpuFftMilliseconds() const;
+    [[nodiscard]] double gpuRenderMilliseconds() const;
     [[nodiscard]] bool isInterfaceCapturingMouse() const;
 
 private:

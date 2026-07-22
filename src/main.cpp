@@ -2,13 +2,18 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cstring>
 #include <exception>
 
-int main()
+int main(const int argc, char** argv)
 {
     try {
         water::Application app;
-        app.run();
+        if (argc > 1 && std::strcmp(argv[1], "--benchmark") == 0) {
+            app.runBenchmark();
+        } else {
+            app.run();
+        }
         return 0;
     } catch (const std::exception& error) {
         spdlog::critical("Fatal error: {}", error.what());

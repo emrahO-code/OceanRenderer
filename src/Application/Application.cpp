@@ -10,8 +10,11 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
+#include <iomanip>
+#include <iostream>
 #include <memory>
 #include <numbers>
 #include <stdexcept>
@@ -112,6 +115,96 @@ void Application::run()
     }
 
     renderer.waitIdle();
+}
+
+void Application::runBenchmark()
+{
+    const GlfwContext glfw;
+    if (glfwVulkanSupported() != GLFW_TRUE) {
+        throw std::runtime_error("GLFW reports no Vulkan loader or ICD");
+    }
+
+    constexpr int windowWidth = 1600;
+    constexpr int windowHeight = 900;
+    constexpr int warmupFrames = 30;
+    constexpr int measuredFrames = 90;
+
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    const std::unique_ptr<GLFWwindow, WindowDeleter> window(
+        glfwCreateWindow(windowWidth, windowHeight, "WaterRenderer benchmark", nullptr, nullptr));
+    if (!window) throw std::runtime_error("Window creation failed");
+
+    OceanSettings oceanSettings;
+    RenderSettings renderSettings;
+    Camera camera;
+    Profiler profiler;
+    TessendorfOcean ocean(oceanSettings);
+    VulkanRenderer renderer(window.get());
+
+#ifdef NDEBUG
+    constexpr const char* buildType = "Release";
+#else
+    constexpr const char* buildType = "Debug";
+#endif
+
+    std::cout << "| Device | Build | Window | FFT | Tile Radius | Avg FPS | "
+                 "CPU Frame | GPU FFT | GPU Render |\n";
+    std::cout << "|---|---:|---:|---:|---:|---:|---:|---:|---:|\n";
+
+    using Clock = std::chrono::steady_clock;
+    const std::array resolutions{128u, 256u, 512u};
+    for (const auto resolution : resolutions) {
+        oceanSettings.resolution = resolution;
+        ocean.rebuild(oceanSettings);
+
+        float simulationTime = 0.0f;
+        auto previous = Clock::now();
+        double cpuMilliseconds = 0.0;
+        double gpuFftMilliseconds = 0.0;
+        double gpuRenderMilliseconds = 0.0;
+
+        for (int frame = 0; frame < warmupFrames + measuredFrames; ++frame) {
+            const auto frameStart = Clock::now();
+            glfwPollEvents();
+
+            const auto now = Clock::now();
+            const float delta = std::clamp(
+                std::chrono::duration<float>(now - previous).count(), 0.0f, 0.1f);
+            previous = now;
+
+            renderer.drawInterface(
+                oceanSettings, renderSettings, ocean, camera, profiler, 0.0f);
+            camera.update(window.get(), delta, false);
+            simulationTime += delta;
+            renderer.render(ocean, camera, renderSettings, simulationTime);
+
+            const auto frameEnd = Clock::now();
+            if (frame >= warmupFrames) {
+                cpuMilliseconds +=
+                    std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
+                gpuFftMilliseconds += renderer.gpuFftMilliseconds();
+                gpuRenderMilliseconds += renderer.gpuRenderMilliseconds();
+            }
+        }
+
+        renderer.waitIdle();
+        const double averageCpu = cpuMilliseconds / measuredFrames;
+        const double averageFft = gpuFftMilliseconds / measuredFrames;
+        const double averageRender = gpuRenderMilliseconds / measuredFrames;
+        const double averageFps = 1000.0 / std::max(averageCpu, 0.001);
+
+        std::cout << "| " << renderer.deviceName()
+                  << " | " << buildType
+                  << " | " << windowWidth << "x" << windowHeight
+                  << " | " << resolution << "x" << resolution
+                  << " | " << renderSettings.tileRadius
+                  << " | " << std::fixed << std::setprecision(1) << averageFps
+                  << " | " << std::setprecision(2) << averageCpu << " ms"
+                  << " | " << std::setprecision(3) << averageFft << " ms"
+                  << " | " << std::setprecision(3) << averageRender << " ms"
+                  << " |\n";
+    }
 }
 
 } // namespace water

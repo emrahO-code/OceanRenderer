@@ -29,6 +29,30 @@ frame.
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Project license](LICENSE)
 
+## Screenshots
+
+![Sunset ocean without UI](docs/images/Sunset%20No%20UI.png)
+
+![Overcast close-up water surface](docs/images/Overcast%20Close-up.png)
+
+![Night sky ocean lighting](docs/images/Night%20Sky.png)
+
+![Settings and LOD controls](docs/images/Settings%20and%20LOD.png)
+
+![Performance overlay](docs/images/Performance.png)
+
+## Performance Snapshot
+
+Measured with `./build-release/bin/WaterRenderer --benchmark` on Apple M2 at
+1600x900, tile radius 3, 4x MSAA, Release build. GPU times come from Vulkan
+timestamp queries.
+
+| Device | Build | Window | FFT | Tile Radius | Avg FPS | CPU Frame | GPU FFT | GPU Render |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Apple M2 | Release | 1600x900 | 128x128 | 3 | 59.7 | 16.74 ms | 0.446 ms | 15.545 ms |
+| Apple M2 | Release | 1600x900 | 256x256 | 3 | 37.3 | 26.84 ms | 2.051 ms | 24.286 ms |
+| Apple M2 | Release | 1600x900 | 512x512 | 3 | 17.1 | 58.41 ms | 10.381 ms | 47.498 ms |
+
 ## Requirements
 
 - C++20 compiler
@@ -59,6 +83,12 @@ CMake:
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --target WaterRenderer
 ./build/bin/WaterRenderer
+```
+
+Run the local benchmark table:
+
+```sh
+./build/bin/WaterRenderer --benchmark
 ```
 
 Useful configure options:

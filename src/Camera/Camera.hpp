@@ -27,7 +27,7 @@ private:
     static constexpr float fieldOfView = 1.0471975512f;
     static constexpr float mouseSensitivity = 0.0022f;
 
-    glm::vec3 position_{0.0f, 8.0f, 18.0f};
+    glm::vec3 position_{0.0f, 100.0f, 18.0f};
     float yaw_{-1.57079632679f};
     float pitch_{-0.12f};
     float movementSpeed_{22.0f};

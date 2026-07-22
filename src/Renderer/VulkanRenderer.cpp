@@ -35,6 +35,21 @@ void VulkanRenderer::waitIdle()
     check(vkDeviceWaitIdle(impl_->device), "vkDeviceWaitIdle");
 }
 
+const std::string& VulkanRenderer::deviceName() const
+{
+    return impl_->deviceName;
+}
+
+double VulkanRenderer::gpuFftMilliseconds() const
+{
+    return impl_->gpuFftMilliseconds;
+}
+
+double VulkanRenderer::gpuRenderMilliseconds() const
+{
+    return impl_->gpuRenderMilliseconds;
+}
+
 bool VulkanRenderer::isInterfaceCapturingMouse() const
 {
     return ImGui::GetIO().WantCaptureMouse;
