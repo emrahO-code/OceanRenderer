@@ -1,0 +1,67 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 1, std430) buffer TransformA
+{
+    vec2 values[];
+} transformA;
+
+layout(set = 0, binding = 2, std430) buffer TransformB
+{
+    vec2 values[];
+} transformB;
+
+layout(set = 0, binding = 3, rgba32f) uniform writeonly image2D displacementMap;
+layout(set = 0, binding = 4, rgba32f) uniform writeonly image2D normalMap;
+
+layout(push_constant) uniform OceanPush
+{
+    layout(offset = 0) uint resolution;
+    layout(offset = 12) uint sourceBuffer;
+    layout(offset = 24) float choppiness;
+} ocean;
+
+float fieldValue(uint field, uint index, uint count)
+{
+    uint address = field * count + index;
+    return ocean.sourceBuffer == 0u
+        ? transformA.values[address].x
+        : transformB.values[address].x;
+}
+
+void main()
+{
+    uvec2 coordinate = gl_GlobalInvocationID.xy;
+    if (coordinate.x >= ocean.resolution ||
+        coordinate.y >= ocean.resolution) return;
+
+    uint count = ocean.resolution * ocean.resolution;
+    uint index = coordinate.y * ocean.resolution + coordinate.x;
+    float signCorrection = ((coordinate.x + coordinate.y) & 1u) == 0u
+        ? 1.0 : -1.0;
+    float height = signCorrection * fieldValue(0u, index, count);
+    float slopeX = signCorrection * fieldValue(1u, index, count);
+    float slopeZ = signCorrection * fieldValue(2u, index, count);
+    float displacementX = signCorrection * fieldValue(3u, index, count);
+    float displacementZ = signCorrection * fieldValue(4u, index, count);
+    float dXdx = signCorrection * fieldValue(5u, index, count);
+    float dZdz = signCorrection * fieldValue(6u, index, count);
+    float dXdz = signCorrection * fieldValue(7u, index, count);
+    float dZdx = signCorrection * fieldValue(8u, index, count);
+    float jacobian =
+        (1.0 + ocean.choppiness * dXdx) *
+        (1.0 + ocean.choppiness * dZdz) -
+        (ocean.choppiness * dXdz) * (ocean.choppiness * dZdx);
+
+    imageStore(
+        displacementMap, ivec2(coordinate),
+        vec4(
+            ocean.choppiness * displacementX,
+            height,
+            ocean.choppiness * displacementZ,
+            jacobian));
+    imageStore(
+        normalMap, ivec2(coordinate),
+        vec4(slopeX, slopeZ, dXdx, dZdz));
+}

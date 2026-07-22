@@ -1,0 +1,81 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 1, std430) buffer TransformA
+{
+    vec2 values[];
+} transformA;
+
+layout(set = 0, binding = 2, std430) buffer TransformB
+{
+    vec2 values[];
+} transformB;
+
+layout(push_constant) uniform OceanPush
+{
+    layout(offset = 0) uint resolution;
+    layout(offset = 4) uint stage;
+    layout(offset = 8) uint horizontal;
+    layout(offset = 12) uint sourceBuffer;
+} ocean;
+
+const float PI = 3.14159265358979323846;
+const uint FIELD_COUNT = 9;
+
+vec2 multiplyComplex(vec2 a, vec2 b)
+{
+    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+vec2 loadValue(uint index)
+{
+    return ocean.sourceBuffer == 0u
+        ? transformA.values[index]
+        : transformB.values[index];
+}
+
+void storeValue(uint index, vec2 value)
+{
+    if (ocean.sourceBuffer == 0u) {
+        transformB.values[index] = value;
+    } else {
+        transformA.values[index] = value;
+    }
+}
+
+void main()
+{
+    uint count = ocean.resolution * ocean.resolution;
+    uint butterfliesPerField = count / 2u;
+    uint invocation = gl_GlobalInvocationID.x;
+    uint totalButterflies = butterfliesPerField * FIELD_COUNT;
+    if (invocation >= totalButterflies) return;
+
+    uint field = invocation / butterfliesPerField;
+    uint butterfly = invocation % butterfliesPerField;
+    uint line = butterfly / (ocean.resolution / 2u);
+    uint inLine = butterfly % (ocean.resolution / 2u);
+    uint span = 1u << (ocean.stage + 1u);
+    uint halfSpan = span / 2u;
+    uint group = inLine / halfSpan;
+    uint offset = inLine % halfSpan;
+    uint first = group * span + offset;
+    uint second = first + halfSpan;
+
+    uint firstPixel = ocean.horizontal != 0u
+        ? line * ocean.resolution + first
+        : first * ocean.resolution + line;
+    uint secondPixel = ocean.horizontal != 0u
+        ? line * ocean.resolution + second
+        : second * ocean.resolution + line;
+    uint fieldOffset = field * count;
+
+    vec2 a = loadValue(fieldOffset + firstPixel);
+    vec2 b = loadValue(fieldOffset + secondPixel);
+    float angle = 2.0 * PI * float(offset) / float(span);
+    vec2 twiddle = vec2(cos(angle), sin(angle));
+    vec2 rotated = multiplyComplex(twiddle, b);
+    storeValue(fieldOffset + firstPixel, a + rotated);
+    storeValue(fieldOffset + secondPixel, a - rotated);
+}

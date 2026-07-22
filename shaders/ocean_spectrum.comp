@@ -1,0 +1,84 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer Seeds
+{
+    vec4 values[];
+} seeds;
+
+layout(set = 0, binding = 1, std430) buffer TransformA
+{
+    vec2 values[];
+} transformA;
+
+layout(push_constant) uniform OceanPush
+{
+    layout(offset = 0) uint resolution;
+    layout(offset = 16) float time;
+    layout(offset = 20) float patchLength;
+} ocean;
+
+const float PI = 3.14159265358979323846;
+const uint FIELD_COUNT = 9;
+
+vec2 multiplyComplex(vec2 a, vec2 b)
+{
+    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+uint reverseBits(uint value, uint bitCount)
+{
+    return bitfieldReverse(value) >> (32u - bitCount);
+}
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+    uint count = ocean.resolution * ocean.resolution;
+    if (index >= count) return;
+
+    uint x = index % ocean.resolution;
+    uint y = index / ocean.resolution;
+    uint mirrorX = (ocean.resolution - x) % ocean.resolution;
+    uint mirrorY = (ocean.resolution - y) % ocean.resolution;
+    uint mirrorIndex = mirrorY * ocean.resolution + mirrorX;
+
+    vec4 seed = seeds.values[index];
+    vec4 mirrorSeed = seeds.values[mirrorIndex];
+    float phase = seed.z * ocean.time;
+    vec2 rotation = vec2(cos(phase), sin(phase));
+    vec2 positive = multiplyComplex(seed.xy, rotation);
+    vec2 negative = multiplyComplex(
+        vec2(mirrorSeed.x, -mirrorSeed.y),
+        vec2(rotation.x, -rotation.y));
+    vec2 height = positive + negative;
+
+    float deltaK = 2.0 * PI / ocean.patchLength;
+    vec2 wave = vec2(
+        int(x) - int(ocean.resolution / 2u),
+        int(y) - int(ocean.resolution / 2u)) * deltaK;
+    float waveLength = length(wave);
+    vec2 unitWave = waveLength > 1.0e-6 ? wave / waveLength : vec2(0.0);
+    vec2 imaginaryHeight = vec2(-height.y, height.x);
+    vec2 displacementX = -unitWave.x * imaginaryHeight;
+    vec2 displacementZ = -unitWave.y * imaginaryHeight;
+
+    vec2 fields[FIELD_COUNT];
+    fields[0] = height;
+    fields[1] = wave.x * imaginaryHeight;
+    fields[2] = wave.y * imaginaryHeight;
+    fields[3] = displacementX;
+    fields[4] = displacementZ;
+    fields[5] = wave.x * vec2(-displacementX.y, displacementX.x);
+    fields[6] = wave.y * vec2(-displacementZ.y, displacementZ.x);
+    fields[7] = wave.y * vec2(-displacementX.y, displacementX.x);
+    fields[8] = wave.x * vec2(-displacementZ.y, displacementZ.x);
+
+    uint bits = uint(findMSB(ocean.resolution));
+    uint destination =
+        reverseBits(y, bits) * ocean.resolution + reverseBits(x, bits);
+    for (uint field = 0u; field < FIELD_COUNT; ++field) {
+        transformA.values[field * count + destination] = fields[field];
+    }
+}
