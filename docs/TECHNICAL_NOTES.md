@@ -1,53 +1,55 @@
-# Technical Decisions and Known Limitations
+# Engineering Notes
 
-## Technical Decisions
+This project is meant to show low-level graphics ownership: resource lifetime,
+GPU synchronization, shader data layout, real-time simulation, and enough UI to
+inspect the renderer while it is running.
 
-- **Vulkan-only rendering path.** GLFW creates a no-API window and all rendering
-  goes through Vulkan. This keeps the frame model explicit and avoids a mixed
-  OpenGL/Vulkan backend.
-- **Private renderer implementation.** `VulkanRenderer` keeps a small stable
-  public API while `VulkanRenderer::Impl` owns Vulkan handles and module-local
-  implementation details.
-- **GPU-resident ocean simulation.** The CPU generates compact deterministic
-  spectral seeds only when basis settings change. Per-frame spectrum evolution,
-  inverse FFT, displacement, normal, derivative, and foam data are computed on
-  the GPU.
-- **Single graphics/compute queue path.** The renderer selects a queue family
-  that supports graphics and uses it for compute dispatch and scene rendering.
-  This avoids cross-queue synchronization complexity.
-- **Swapchain-sized frame resources.** Command buffers and render-finished
-  semaphores follow the swapchain image count and are rebuilt during swapchain
-  recreation.
-- **Host-visible mesh buffers.** LOD mesh vertex and index buffers are filled
-  directly from host-visible memory. This is simple and acceptable because mesh
-  data changes only when ocean resources are recreated.
-- **Shader ABI assertions.** CPU uniform and push-constant structs use explicit
-  layout assertions to protect shader-facing offsets.
-- **CMake FetchContent for approved dependencies.** CMake can download GLFW,
-  GLM, spdlog, and Dear ImGui when they are not available locally. The Vulkan
-  SDK remains a required system dependency because the renderer needs the
-  loader, headers, `glslc`, and a working driver or portability layer.
+## What I Optimized For
 
-## Known Limitations
+**Keep the simulation on the GPU.** The CPU only rebuilds deterministic
+Tessendorf spectrum seeds when the spectral basis changes. Per-frame spectrum
+evolution, FFT passes, displacement, normals, derivatives, and foam signals stay
+GPU-resident, which avoids texture uploads on the hot path.
 
-- **No automated render tests.** Current verification is build/syntax based and
-  manual visual inspection. There are no screenshot regression tests or GPU
-  correctness tests.
-- **One frame in flight.** The renderer uses a single frame fence and one
-  acquired image at a time. This is simpler but leaves possible throughput on
-  the table.
-- **No dedicated transfer staging path.** Some buffers are populated through
-  host-visible memory instead of device-local buffers plus staging uploads.
-- **Compute and graphics are serialized.** Ocean compute runs in the same
-  command buffer before scene rendering. Async compute is not used.
-- **No pipeline cache.** Graphics and compute pipelines are recreated from
-  scratch on startup and relevant swapchain rebuilds.
-- **Fixed render pass model.** The renderer uses a traditional render pass and
-  fixed MSAA choice. It does not use dynamic rendering.
-- **Limited material model.** Water optics are tuned for plausible real-time
-  appearance, not spectral path-traced accuracy.
-- **Resolution choices are constrained.** UI exposes power-of-two FFT
-  resolutions from 64 to 512 because the compute FFT assumes radix-2 sizing.
-- **Vulkan 1.2-capable environment required.** The application requires a
-  Vulkan loader, a compatible device or portability layer, compute shaders, and
-  `rgba32f` storage-image support.
+**Protect shader-facing ABI.** CPU structs that map to shader uniforms and push
+constants have explicit layout assertions. This catches accidental padding or
+offset changes at compile time instead of turning them into visual artifacts.
+
+**Prefer deterministic rebuild points.** Ocean resources are recreated only
+when resolution or spectral seed revision changes. Parameters such as height
+scale and choppiness can update frame-to-frame without rebuilding the spectrum.
+
+**Favor direct instrumentation.** The renderer exposes CPU frame history,
+per-scope profiler samples, GPU FFT time, and scene/UI GPU time in ImGui. That
+makes performance tradeoffs visible while tuning simulation and shading
+parameters.
+
+## Tradeoffs I Would Revisit
+
+**Frames in flight.** The renderer currently keeps the frame loop simple with a
+single frame fence. Moving to two or three frames in flight would improve GPU
+occupancy, but it would also require per-frame uniform buffers, command-buffer
+ownership, and more careful timestamp bookkeeping.
+
+**Transfer strategy.** Mesh and seed data are uploaded through host-visible
+memory because they change infrequently and the code path is easy to inspect.
+For larger scenes, I would move static mesh data through staging buffers into
+device-local memory.
+
+**Compute scheduling.** Ocean compute runs before graphics in the same command
+buffer. That keeps hazards explicit and predictable. A future version could
+explore async compute, but only after measuring whether overlap beats the added
+queue synchronization complexity on the target hardware.
+
+**Pipeline startup cost.** Pipelines are built directly at startup and rebuilt
+where needed during swapchain recreation. A production renderer should add a
+pipeline cache and consider precompiled pipeline variants for faster startup and
+iteration.
+
+**Render validation.** The current project relies on build checks, validation
+layers, profiler output, and manual visual inspection.
+
+**Water model scope.** The optical model is tuned for plausible real-time ocean
+rendering rather than physically exhaustive water transport. The next quality
+step would be better energy calibration across sky, sun glints, underwater
+attenuation, and foam response.
